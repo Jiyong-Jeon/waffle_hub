@@ -1,0 +1,10 @@
+name: mnist_det
+task: object_detection
+categories:
+-   category_id: 1
+    supercategory: number
+    name: '1'
+-   category_id: 2
+    supercategory: number
+    name: '2'
+created: '2024-01-04 17:06:24'

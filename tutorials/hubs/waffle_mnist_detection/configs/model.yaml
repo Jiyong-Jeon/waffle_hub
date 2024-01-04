@@ -1,0 +1,13 @@
+name: waffle_mnist_detection
+backend: ultralytics
+version: 8.0.227
+task: object_detection
+model_type: yolov8
+model_size: n
+categories:
+-   category_id: 1
+    supercategory: number
+    name: '1'
+-   category_id: 2
+    supercategory: number
+    name: '2'

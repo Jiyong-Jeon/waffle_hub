@@ -1,0 +1,7 @@
+name: huggingface_mnist_detection
+backend: transformers
+version: 4.34.1
+task: object_detection
+model_type: DETR
+model_size: base
+categories: []

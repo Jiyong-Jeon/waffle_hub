@@ -1,0 +1,7 @@
+path: /home/snuailab/Desktop/waffle_hub/docs/tutorials/datasets/mnist_det/exports/ULTRALYTICS
+train: train
+val: val
+test: test
+names:
+    0: '1'
+    1: '2'

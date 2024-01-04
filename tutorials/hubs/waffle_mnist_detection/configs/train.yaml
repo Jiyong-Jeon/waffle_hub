@@ -1,0 +1,14 @@
+dataset_path: /home/snuailab/Desktop/waffle_hub/docs/tutorials/datasets/mnist_det/exports/ULTRALYTICS/data.yaml
+epochs: 50
+batch_size: 4
+image_size:
+- 640
+- 640
+learning_rate: 0.01
+letter_box: true
+pretrained_model: yolov8n.pt
+device: '0'
+workers: 2
+seed: 0
+advance_params: {}
+verbose: true

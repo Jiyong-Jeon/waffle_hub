@@ -1,0 +1,7 @@
+name: autocare_dlt_mnist_detection
+backend: autocare_dlt
+version: autocare-dlt
+task: object_detection
+model_type: YOLOv5
+model_size: s
+categories: []
