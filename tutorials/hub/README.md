@@ -4,4 +4,4 @@ You can do following things with this Waffle Hub:
 <!-- - [Benchmark Hub](benchmark) -->
 
 
-See [Waffle Hub](../../waffle_hub/hub/hub.md) for more details.
+See [Waffle Hub](../../../waffle_hub/hub/hub.md) for more details.
