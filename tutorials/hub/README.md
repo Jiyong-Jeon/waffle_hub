@@ -1,6 +1,6 @@
 You can do following things with this Waffle Hub:
 
-- [Waffle Hub](Waffle_hub)
+- [Waffle Hub](using_hub.ipynb)
 <!-- - [Benchmark Hub](benchmark) -->
 
 
