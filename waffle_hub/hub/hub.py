@@ -425,7 +425,9 @@ class Hub:
         return hub_name_list
 
     @classmethod
-    def from_waffle_file(cls, name: str, waffle_file: str, root_dir: str = None) -> "Hub":
+    def from_waffle_file(
+        cls, name: str, waffle_file: Union[str, Path], root_dir: str = None
+    ) -> "Hub":
         """Import new Hub with waffle file for inference.
 
         Args:
@@ -441,10 +443,11 @@ class Hub:
         if name in cls.get_hub_list(root_dir):
             raise FileExistsError(f"{name} already exists. Try another name.")
 
-        if not os.path.exists(waffle_file):
+        waffle_file = Path(waffle_file)
+        if not waffle_file.exists():
             raise FileNotFoundError(f"Waffle file {waffle_file} is not exist.")
 
-        if os.path.splitext(waffle_file)[1] != ".waffle":
+        if waffle_file.suffix != ".waffle":
             raise ValueError(
                 f"Invalid waffle file: {waffle_file}, Waffle File extension must be .waffle."
             )
@@ -1563,7 +1566,7 @@ class Hub:
                         if writer is None:
                             h, w = draw.shape[:2]
                             writer = create_video_writer(
-                                str(self.inference_dir / Path(cfg.source).with_suffix(".mp4").name),
+                                str(self.inference_dir / Path(cfg.source).name),
                                 dataset.fps,
                                 (w, h),
                             )
