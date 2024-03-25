@@ -689,7 +689,7 @@ class Dataset:
         dataset_info = DatasetInfo.load(dataset_info_file)
 
         ds = cls(**dataset_info.to_dict(), root_dir=root_dir)
-        ds.create_index()
+        # ds.create_index()
         return ds
 
     @classmethod
