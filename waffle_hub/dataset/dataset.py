@@ -1669,26 +1669,45 @@ class Dataset:
         )
 
     # export
-    def get_split_ids(self) -> list[list[int]]:
+    def get_split_ids(self, set_name: str = None) -> Union[list[list[int]], list[int]]:
         """
         Get split ids
+        Args:
+            set_name (str, optional): set name. Defaults to None. if None, return all split ids.
 
         Returns:
-            list[list[int]]: split ids
+            Union[list[list[int]], list[int]]: split ids
         """
         if not self.train_set_file.exists():
             raise FileNotFoundError("There is no set files. Please run ds.split() first")
 
-        train_ids: list[int] = (
-            io.load_json(self.train_set_file) if self.train_set_file.exists() else []
-        )
-        val_ids: list[int] = io.load_json(self.val_set_file) if self.val_set_file.exists() else []
-        test_ids: list[int] = io.load_json(self.test_set_file) if self.test_set_file.exists() else []
-        unlabeled_ids: list[int] = (
-            io.load_json(self.unlabeled_set_file) if self.unlabeled_set_file.exists() else []
-        )
-
-        return [train_ids, val_ids, test_ids, unlabeled_ids]
+        if set_name:
+            if set_name == "train":
+                return io.load_json(self.train_set_file) if self.train_set_file.exists() else []
+            elif set_name == "val":
+                return io.load_json(self.val_set_file) if self.val_set_file.exists() else []
+            elif set_name == "test":
+                return io.load_json(self.test_set_file) if self.test_set_file.exists() else []
+            elif set_name == "unlabeled":
+                return (
+                    io.load_json(self.unlabeled_set_file) if self.unlabeled_set_file.exists() else []
+                )
+            else:
+                raise ValueError(f"Invalid set name: {set_name}")
+        else:
+            train_ids: list[int] = (
+                io.load_json(self.train_set_file) if self.train_set_file.exists() else []
+            )
+            val_ids: list[int] = (
+                io.load_json(self.val_set_file) if self.val_set_file.exists() else []
+            )
+            test_ids: list[int] = (
+                io.load_json(self.test_set_file) if self.test_set_file.exists() else []
+            )
+            unlabeled_ids: list[int] = (
+                io.load_json(self.unlabeled_set_file) if self.unlabeled_set_file.exists() else []
+            )
+            return [train_ids, val_ids, test_ids, unlabeled_ids]
 
     def get_background_ids(self) -> list[int]:
         """

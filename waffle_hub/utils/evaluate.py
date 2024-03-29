@@ -182,14 +182,14 @@ def evaluate_object_detection(
         precision_per_class=map_dict["map_per_class"].tolist(),
         mAR_100_per_class=map_dict["mar_100_per_class"].tolist(),
         confusion_matrix=metric["confusion_matrix"],
-        tpfpfn_table=metric["tpfpfn"],
-        fp_images_set=metric["fp"],
-        fn_images_set=metric["fn"],
         f1_score_per_class=f1_dict["f1_scores"],
         macro_f1_score=f1_dict["macro_f1_score"],
         micro_f1_score=f1_dict["micro_f1_score"],
         weighted_f1_score=f1_dict["weighted_f1_score"],
     )
+    result.tpfpfn_table = metric["tpfpfn"]
+    result.fp_images_set = metric["fp"]
+    result.fn_images_set = metric["fn"]
     return result
 
 

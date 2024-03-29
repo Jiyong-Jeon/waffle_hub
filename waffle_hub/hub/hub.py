@@ -51,7 +51,7 @@ from waffle_hub.schema.running_status import (
     InferencingStatus,
     TrainingStatus,
 )
-from waffle_hub.temp_utils.image.io import batch_save_images, save_image
+from waffle_hub.temp_utils.image.io import save_concat_images, save_image
 from waffle_hub.temp_utils.video.io import create_video_writer
 from waffle_hub.utils.data import (
     IMAGE_EXTS,
@@ -106,11 +106,14 @@ class Hub:
     METRIC_FILE = "metrics.json"
 
     # evaluate results
+    # save path = evaluate_dir / dataset_root / dataset_name /evaluate.json + mispredictions dir for
+    EVALUATE_DIR = Path("evaluate")
     EVALUATE_FILE = "evaluate.json"
     CONFUSION_MATRIX_FILE = "confusion_matrix.jpg"
+
     MIS_PREDICT_DIR = Path("mispredictions")
-    FALSE_POSITIVE_DIR = Path("fp")
-    FALSE_NEGATIVE_DIR = Path("fn")
+    FALSE_POSITIVE_DIR = MIS_PREDICT_DIR / Path("fp")
+    FALSE_NEGATIVE_DIR = MIS_PREDICT_DIR / Path("fn")
 
     # inference results
     INFERENCE_FILE = "inferences.json"
@@ -649,19 +652,9 @@ class Hub:
         return self.hub_dir / Hub.INFERENCE_DIR
 
     @cached_property
-    def mis_predict_dir(self) -> Path:
-        """Comparing pred and label in Evaluation. Directory"""
-        return self.hub_dir / Hub.MIS_PREDICT_DIR
-
-    @cached_property
-    def fp_dir(self) -> Path:
-        """False Positive Directory"""
-        return self.mis_predict_dir / Hub.FALSE_POSITIVE_DIR
-
-    @cached_property
-    def fn_dir(self) -> Path:
-        """False Negative Directory"""
-        return self.mis_predict_dir / Hub.FALSE_NEGATIVE_DIR
+    def evaluate_dir(self) -> Path:
+        """Evaluate Results Directory"""
+        return self.hub_dir / Hub.EVALUATE_DIR
 
     @cached_property
     def inference_file(self) -> Path:
@@ -704,16 +697,6 @@ class Hub:
         return self.hub_dir / Hub.METRIC_FILE
 
     @cached_property
-    def evaluate_file(self) -> Path:
-        """Evaluate Json File"""
-        return self.hub_dir / Hub.EVALUATE_FILE
-
-    @cached_property
-    def confusionmatrix_file(self) -> Path:
-        """Confusion matrix file after Evaluate"""
-        return self.hub_dir / Hub.CONFUSION_MATRIX_FILE
-
-    @cached_property
     def waffle_file(self) -> Path:
         """Export Waffle file"""
         return self.hub_dir / f"{self.name}.waffle"
@@ -753,6 +736,14 @@ class Hub:
     def delete_artifact(self):
         """Delete Artifact Directory. It can be trained again."""
         io.remove_directory(self.artifact_dir, recursive=True)
+
+    def delete_evaluate(self, dataset_name: str = None, dataset_root_dir: Union[Path, str] = None):
+        """Delete Evaluate Directory. if dataset_name is None, delete all evaluate results."""
+        if dataset_name and dataset_root_dir:
+            target_path = self.evaluate_dir / dataset_root_dir / dataset_name
+            io.remove_directory(target_path, recursive=True)
+        else:
+            io.remove_directory(self.evaluate_dir, recursive=True)
 
     def check_train_sanity(self) -> bool:
         """Check if all essential files are exist.
@@ -860,7 +851,9 @@ class Hub:
 
         return io.load_json(self.metric_file)
 
-    def get_evaluate_result(self) -> list[dict]:
+    def get_evaluate_result(
+        self, dataset_name: str, dataset_root_dir: Union[Path, str]
+    ) -> list[dict]:
         """Get evaluate result from evaluate file.
 
         Example:
@@ -875,10 +868,11 @@ class Hub:
         Returns:
             dict: evaluate result
         """
-        if not self.evaluate_file.exists():
+        evaluate_file = self.evaluate_dir / dataset_root_dir / dataset_name / Hub.EVALUATE_FILE
+        if not evaluate_file.exists():
             warnings.warn("Evaluate file is not exist. Evaluate first!")
             return []
-        return io.load_json(self.evaluate_file)
+        return io.load_json(evaluate_file)
 
     def get_inference_result(self) -> list[dict[str, list]]:
         """Get inference result from inference file.
@@ -1328,7 +1322,7 @@ class Hub:
             raise e
 
         try:
-            self.evaluate(
+            eval_result = self.evaluate(
                 dataset=dataset,
                 batch_size=cfg.batch_size,
                 image_size=cfg.image_size,
@@ -1336,7 +1330,7 @@ class Hub:
                 device=cfg.device,
                 workers=cfg.workers,
             )
-            result.eval_metrics = self.get_evaluate_result()
+            result.eval_metrics = eval_result.eval_metrics
         except Exception as e:
             logger.error("Evaluation failed. Resolve issue and evaluate again.")
             result.eval_metrics = []
@@ -1349,21 +1343,26 @@ class Hub:
         raise NotImplementedError
 
     def before_evaluate(self, cfg: EvaluateConfig, dataset: Dataset):
-        if len(dataset.get_split_ids()[2]) == 0:
+        if len(dataset.get_split_ids(cfg.set_name)) == 0:
             cfg.set_name = "val"
             logger.warning("test set is not exist. use val set instead.")
+            if len(dataset.get_split_ids(cfg.set_name)) == 0:
+                raise ValueError("val set is not exist.")
 
     def on_evaluate_start(self, cfg: EvaluateConfig):
         pass
 
     def evaluating(
-        self, cfg: EvaluateConfig, status_logger: EvaluatingStatusLogger, dataset: Dataset
+        self,
+        cfg: EvaluateConfig,
+        result: EvaluateResult,
+        status_logger: EvaluatingStatusLogger,
+        dataset: Dataset,
     ):
         device = cfg.device
 
         model = self.get_model().to(device)
 
-        dataset = Dataset.load(cfg.dataset_name, cfg.dataset_root_dir)
         dataloader = get_dataset_class("dataset")(
             dataset,
             cfg.image_size,
@@ -1393,12 +1392,15 @@ class Hub:
         )
 
         # TODO: Confusion matrix visualization functions other than 'OBJECT_DETECTION' and 'CLASSIFICATION' are required.
+        if not Path(cfg.output_path).exists():
+            io.make_directory(cfg.output_path)
+
         if self.task == TaskType.OBJECT_DETECTION or self.task == TaskType.CLASSIFICATION:
             draw_confusion_matrix(
                 metrics.confusion_matrix,
                 self.task,
                 self.get_category_names(),
-                self.confusionmatrix_file,
+                cfg.output_path / self.CONFUSION_MATRIX_FILE,
             )
 
         result_metrics = []
@@ -1426,61 +1428,64 @@ class Hub:
                         }
                         for cat, cat_value in zip(self.get_category_names(), value)
                     ]
-            elif isinstance(value, set):
-                # When a value comes into the 'set' instance, set_file is searched to get a list of false positive (FN) and false positive (FP) images.
-                # 'value' matches the image index. Match the actual image with set_file.
-                values = []
-                pred_list = list(value)
-                set_file = io.load_json(getattr(dataset, f"{cfg.set_name}_set_file"))
-                for pred in pred_list:
-                    image_info = dataset.image_dict[set_file[pred]]
-                    values.append(
-                        {pred: {"file_name": image_info.file_name, "image_id": image_info.image_id}}
-                    )
             else:
                 values = value
             result_metrics.append({"tag": tag, "value": values})
 
-        io.save_json(result_metrics, self.evaluate_file)
+        result.eval_metrics = result_metrics
 
+        # TODO: Draw results other than 'OBJECT_DETECTION' are required.
         if (cfg.draw == True) & (self.task == "OBJECT_DETECTION"):
             # Draw evalutation option in object_detection
-            io.make_directory(self.mis_predict_dir)
-            io.make_directory(self.fp_dir)
-            io.make_directory(self.fn_dir)
+            save_path = cfg.output_path / self.MIS_PREDICT_DIR
+            if save_path.exists():
+                io.remove_directory(save_path, recursive=True)
 
-            set_file = io.load_json(getattr(dataset, f"{cfg.set_name}_set_file"))
+            set_file = dataset.get_split_ids(cfg.set_name)
 
-            for result_tag in result_metrics:
-                if (
-                    (result_tag["tag"] == "fp_images_set") or (result_tag["tag"] == "fn_images_set")
-                ) & (result_tag["value"] != None):
-                    for img in result_tag["value"]:
-                        image_num = set_file[list(img.keys())[0]]
-                        image_info = dataset.image_dict[image_num]
-                        draw_pred = draw_results(
-                            image=str(dataset.raw_image_dir / image_info.file_name),
-                            results=preds[list(img.keys())[0]],
-                            names=[x["name"] for x in self.categories],
-                        )
-                        draw_label = draw_results(
-                            image=str(dataset.raw_image_dir / image_info.file_name),
-                            results=labels[list(img.keys())[0]],
-                            names=[x["name"] for x in self.categories],
-                        )
+            # FP images
+            fp_image_ids = [set_file[idx] for idx in metrics.fp_images_set]
+            images = dataset.get_images(image_ids=fp_image_ids)
+            fp_save_path = save_path / self.FALSE_POSITIVE_DIR
+            for i, image in enumerate(images):
+                draw_label = draw_results(
+                    image=str(dataset.raw_image_dir / image.file_name),
+                    results=labels[list(metrics.fp_images_set)[i]],
+                    names=[x["name"] for x in self.categories],
+                )
+                draw_pred = draw_results(
+                    image=str(dataset.raw_image_dir / image.file_name),
+                    results=preds[list(metrics.fp_images_set)[i]],
+                    names=[x["name"] for x in self.categories],
+                )
 
-                        if result_tag["tag"] == "fp_images_set":
-                            draw_path = self.fp_dir / Path(image_info.file_name)
-                        elif result_tag["tag"] == "fn_images_set":
-                            draw_path = self.fn_dir / Path(image_info.file_name)
+                draw_path = fp_save_path / Path(image.file_name)
+                save_concat_images(draw_path, [draw_label, draw_pred], create_directory=True)
 
-                        batch_save_images(draw_path, [draw_pred, draw_label], create_directory=True)
+            # Fn images
+            fn_image_ids = [set_file[idx] for idx in metrics.fn_images_set]
+            images = dataset.get_images(image_ids=fn_image_ids)
+            fn_save_path = save_path / self.FALSE_NEGATIVE_DIR
+            for i, image in enumerate(images):
+                draw_label = draw_results(
+                    image=str(dataset.raw_image_dir / image.file_name),
+                    results=labels[list(metrics.fn_images_set)[i]],
+                    names=[x["name"] for x in self.categories],
+                )
+                draw_pred = draw_results(
+                    image=str(dataset.raw_image_dir / image.file_name),
+                    results=preds[list(metrics.fn_images_set)[i]],
+                    names=[x["name"] for x in self.categories],
+                )
+
+                draw_path = fn_save_path / Path(image.file_name)
+                save_concat_images(draw_path, [draw_label, draw_pred], create_directory=True)
 
     def on_evaluate_end(self, cfg: EvaluateConfig):
         pass
 
     def after_evaluate(self, cfg: EvaluateConfig, result: EvaluateResult):
-        result.eval_metrics = self.get_evaluate_result()
+        io.save_json(result.to_dict(), cfg.output_path / self.EVALUATE_FILE)
 
     @device_context
     def evaluate(
@@ -1519,7 +1524,7 @@ class Hub:
 
         Examples:
             >>> evaluate_result = hub.evaluate(
-                    dataset=detection_dataset,
+                    dataset=detset_nameection_dataset,
                     batch_size=4,
                     image_size=640,
                     letterbox=False,
@@ -1571,8 +1576,11 @@ class Hub:
             if letter_box is None:
                 letter_box = train_config.letter_box
 
+            output_path = self.evaluate_dir / dataset.root_dir / dataset.name
             cfg = EvaluateConfig(
                 dataset_name=dataset.name,
+                dataset_root_dir=dataset.root_dir,
+                output_path=output_path,
                 set_name=set_name,
                 batch_size=batch_size,
                 image_size=image_size if isinstance(image_size, list) else [image_size, image_size],
@@ -1583,16 +1591,19 @@ class Hub:
                 workers=workers,
                 device="cpu" if device == "cpu" else f"cuda:{device}",
                 draw=draw,
-                dataset_root_dir=dataset.root_dir,
             )
 
-            result = EvaluateResult()
+            result = EvaluateResult(
+                dataset_name=dataset.name,
+                dataset_root_dir=str(dataset.root_dir),
+                dataset_set_name=set_name,
+            )
 
             # evaluate run
             status_logger.set_running()
             self.before_evaluate(cfg, dataset)
             self.on_evaluate_start(cfg)
-            self.evaluating(cfg, status_logger, dataset)
+            self.evaluating(cfg, result, status_logger, dataset)
             self.on_evaluate_end(cfg)
             self.after_evaluate(cfg, result)
             status_logger.set_success()
@@ -1601,8 +1612,10 @@ class Hub:
             raise e
         except Exception as e:
             status_logger.set_failed(e)
-            if self.evaluate_file.exists():
-                io.remove_file(self.evaluate_file)
+            if output_path.exists():
+                io.remove_directory(output_path, recursive=True)
+            if output_path.parent.exists() and not list(output_path.parent.iterdir()):
+                io.remove_directory(output_path.parent, recursive=True)
             raise e
 
         return result

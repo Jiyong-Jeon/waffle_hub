@@ -21,11 +21,14 @@ def save_image(output_path: Union[str, Path], image: Mat, create_directory: bool
         with open(str(output_path), mode="w+b") as f:
             img_arr.tofile(f)
 
-def batch_save_images(output_path: Union[str, Path], images: list[Mat], create_directory: bool = False) -> None:
+
+def save_concat_images(
+    output_path: Union[str, Path], images: list[Mat], create_directory: bool = False
+) -> None:
     output_path = Path(output_path)
     if create_directory:
         make_directory(output_path.parent)
-        
+
     merged_image = np.concatenate(images, axis=1)
 
     save_type = output_path.suffix
@@ -33,6 +36,7 @@ def batch_save_images(output_path: Union[str, Path], images: list[Mat], create_d
     if ret:
         with open(str(output_path), mode="w+b") as f:
             img_arr.tofile(f)
-            
+
+
 def load_image(input_path: Union[str, Path]) -> Mat:
     return cv2.imdecode(np.fromfile(str(input_path), dtype=np.uint8), cv2.IMREAD_COLOR)

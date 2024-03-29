@@ -1,4 +1,5 @@
 from math import sqrt
+from typing import Union
 
 from waffle_hub.schema.evaluate import ObjectDetectionMetric
 from waffle_hub.schema.fields import Annotation
@@ -108,7 +109,7 @@ def getConfusionMatrix(
     preds: list[Annotation] = None,
     labels: list[Annotation] = None,
     num_classes: int = None,
-) -> ObjectDetectionMetric:
+) -> dict[Union[set, list]]:
     """
     It can find confusion matrix for object detection model analysis.
 
@@ -131,54 +132,65 @@ def getConfusionMatrix(
     for _ in range(num_classes + 1):
         content = [0] * (num_classes + 1)
         confusion_list.append(content)
+    background_idx = num_classes
 
     table_list = list()
     for _ in range(num_classes):
         content = {"tp": 0, "fp": 0, "fn": 0, "bbox_overlap": 0}
         table_list.append(content)
 
-    classnum_background = num_classes
     fn_images_set = set()
     fp_images_set = set()
 
-    for img_num, label in enumerate(labels):
-        pred_list = list(map(int, preds[img_num]["labels"]))
-        for label_idx in range(len(label["boxes"])):
-            near_idx_list = near_box_idx(label, preds[img_num], label_idx, format="xywh")
-            for cnt, near_idx in enumerate(near_idx_list):
+    # 속도 향상 필요 (brute force -> near_box_idx 활용 or serach algorithm)
+    for img_idx, (pred_list, label_list) in enumerate(zip(preds, labels)):
+        # label_list = list(map(int, label["labels"]))
+        fp_list = list(map(int, pred_list["labels"]))  # 이미 찾은 것은 -1로 처리
+        fn_list = list(map(int, label_list["labels"]))  # 이미 찾은 것은 -1로 처리
+        for label_idx, label in enumerate(label_list["labels"]):
+            label = int(label)
+            for pred_idx, pred in enumerate(pred_list["labels"]):
+                pred = int(pred)
                 iou_score = bbox_iou(
-                    preds[img_num]["boxes"][near_idx], label["boxes"][label_idx], format="xywh"
+                    pred_list["boxes"][pred_idx], label_list["boxes"][label_idx], format="xywh"
                 )
-                if (iou_score >= iou_threshold) & (
-                    label["labels"][label_idx] == preds[img_num]["labels"][near_idx]
-                ):
-                    table_list[int(label["labels"][label_idx])]["tp"] += 1  # TP
-                    confusion_list[int(label["labels"][label_idx])][
-                        int(label["labels"][label_idx])
-                    ] += 1  # TP
-                    if label["labels"][label_idx] in pred_list:
-                        pred_list.remove(label["labels"][label_idx])
-                    else:
-                        confusion_list[int(label["labels"][label_idx])][
-                            classnum_background
-                        ] += 1  # FP(overlap)
-                        table_list[int(label["labels"][label_idx])]["bbox_overlap"] += 1  # Overlap
-                        fp_images_set.add(img_num)
+                if (iou_score >= iou_threshold) and (
+                    label_list["labels"][label_idx] == fp_list[pred_idx]
+                ):  # 겹치고 같은 라벨
+                    table_list[label]["tp"] += 1  # TP
+                    confusion_list[label][label] += 1  # TP
+                    fp_list[pred_idx] = -1
+                    fn_list[label_idx] = -1
                     break
-                elif iou_score < iou_threshold:
-                    if len(near_idx_list) - 1 == cnt:
-                        confusion_list[classnum_background][
-                            int(label["labels"][label_idx])
-                        ] += 1  # FN
-                        table_list[int(label["labels"][label_idx])]["fn"] += 1  # FN
-                        fn_images_set.add(img_num)
-                    else:
-                        continue
 
-        for fp_pred in pred_list:
-            confusion_list[fp_pred][classnum_background] += 1  # FP
+                    # confusion_list[int(label["labels"][label_idx])][
+                    #     classnum_background
+                    # ] += 1  # FP(overlap)
+                    # table_list[int(label["labels"][label_idx])]["bbox_overlap"] += 1  # Overlap
+                    # table_list[int(label["labels"][label_idx])]["fp"] += 1  # Overlap ???
+                    # fp_images_set.add(img_idx)
+
+        for fn_label in fn_list:  # FN 처리
+            if fn_label == -1:
+                continue
+            confusion_list[background_idx][fn_label] += 1  # FN
+            table_list[fn_label]["fn"] += 1  # FN 미탐
+            fn_images_set.add(img_idx)
+
+        for pred_idx, fp_pred in enumerate(fp_list):  ## FP over 처리 안됨
+            if fp_pred == -1:
+                continue
+            confusion_list[fp_pred][background_idx] += 1
             table_list[fp_pred]["fp"] += 1  # FP
-            fp_images_set.add(img_num)
+            for label_idx, label in enumerate(fn_list):
+                if label != -1:  # TP 처리된 것 중에 겹치는 것이 있으면
+                    continue
+                iou_score = bbox_iou(
+                    pred_list["boxes"][pred_idx], label_list["boxes"][label_idx], format="xywh"
+                )
+                if iou_score >= iou_threshold and fp_pred == label_list["labels"][label_idx]:
+                    table_list[fp_pred]["bbox_overlap"] += 1
+            fp_images_set.add(img_idx)
 
     result["confusion_matrix"] = confusion_list
     result["tpfpfn"] = table_list
