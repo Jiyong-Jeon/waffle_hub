@@ -21,6 +21,7 @@ from waffle_hub import EXPORT_MAP, DataType, SplitMethod, TaskType
 from waffle_hub.dataset.adapter import (
     export_autocare_dlt,
     export_coco,
+    export_datumaro,
     export_transformers,
     export_yolo,
     import_autocare_dlt,
@@ -716,8 +717,8 @@ class Dataset:
             Dataset: Dataset Class
 
         """
-        if isinstance(src_root_dirs, str):
-            src_root_dirs = [src_root_dirs] * len(src_names)
+        if isinstance(src_root_dirs, (str, Path)):
+            src_root_dirs = [str(src_root_dirs)] * len(src_names)
         if len(src_names) != len(src_root_dirs):
             raise ValueError("Length of src_names and src_root_dirs should be same.")
         if isinstance(task, str):
@@ -1762,6 +1763,8 @@ class Dataset:
             export_function = export_autocare_dlt
         elif data_type in [DataType.TRANSFORMERS]:
             export_function = export_transformers
+        elif data_type in [DataType.DATUMARO]:
+            export_function = export_datumaro
 
         else:
             raise ValueError(f"Invalid data_type: {data_type}")

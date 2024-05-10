@@ -740,7 +740,7 @@ class Hub:
     def delete_evaluate(self, dataset_name: str = None, dataset_root_dir: Union[Path, str] = None):
         """Delete Evaluate Directory. if dataset_name is None, delete all evaluate results."""
         if dataset_name and dataset_root_dir:
-            target_path = self.evaluate_dir / dataset_root_dir / dataset_name
+            target_path = self.evaluate_dir / Path(dataset_root_dir).stem / dataset_name
             io.remove_directory(target_path, recursive=True)
         else:
             io.remove_directory(self.evaluate_dir, recursive=True)
@@ -868,7 +868,9 @@ class Hub:
         Returns:
             dict: evaluate result
         """
-        evaluate_file = self.evaluate_dir / dataset_root_dir / dataset_name / Hub.EVALUATE_FILE
+        evaluate_file = (
+            self.evaluate_dir / Path(dataset_root_dir).stem / dataset_name / Hub.EVALUATE_FILE
+        )
         if not evaluate_file.exists():
             warnings.warn("Evaluate file is not exist. Evaluate first!")
             return []
@@ -1435,51 +1437,48 @@ class Hub:
         result.eval_metrics = result_metrics
 
         # TODO: Draw results other than 'OBJECT_DETECTION' are required.
-        if (cfg.draw == True) & (self.task == "OBJECT_DETECTION"):
+        if (cfg.draw == True) & (self.task == TaskType.OBJECT_DETECTION):
             # Draw evalutation option in object_detection
-            save_path = cfg.output_path / self.MIS_PREDICT_DIR
-            if save_path.exists():
-                io.remove_directory(save_path, recursive=True)
-
             set_file = dataset.get_split_ids(cfg.set_name)
-
             # FP images
-            fp_image_ids = [set_file[idx] for idx in metrics.fp_images_set]
-            images = dataset.get_images(image_ids=fp_image_ids)
-            fp_save_path = save_path / self.FALSE_POSITIVE_DIR
-            for i, image in enumerate(images):
-                draw_label = draw_results(
-                    image=str(dataset.raw_image_dir / image.file_name),
-                    results=labels[list(metrics.fp_images_set)[i]],
-                    names=[x["name"] for x in self.categories],
-                )
-                draw_pred = draw_results(
-                    image=str(dataset.raw_image_dir / image.file_name),
-                    results=preds[list(metrics.fp_images_set)[i]],
-                    names=[x["name"] for x in self.categories],
-                )
+            if metrics.fp_images_set:
+                fp_image_ids = [set_file[idx] for idx in metrics.fp_images_set]
+                images = dataset.get_images(image_ids=fp_image_ids)
+                fp_save_path = cfg.output_path / self.FALSE_POSITIVE_DIR
+                for i, image in enumerate(images):
+                    draw_label = draw_results(
+                        image=str(dataset.raw_image_dir / image.file_name),
+                        results=labels[list(metrics.fp_images_set)[i]],
+                        names=[x["name"] for x in self.categories],
+                    )
+                    draw_pred = draw_results(
+                        image=str(dataset.raw_image_dir / image.file_name),
+                        results=preds[list(metrics.fp_images_set)[i]],
+                        names=[x["name"] for x in self.categories],
+                    )
 
-                draw_path = fp_save_path / Path(image.file_name)
-                save_concat_images(draw_path, [draw_label, draw_pred], create_directory=True)
+                    draw_path = fp_save_path / Path(image.file_name)
+                    save_concat_images(draw_path, [draw_label, draw_pred], create_directory=True)
 
             # Fn images
-            fn_image_ids = [set_file[idx] for idx in metrics.fn_images_set]
-            images = dataset.get_images(image_ids=fn_image_ids)
-            fn_save_path = save_path / self.FALSE_NEGATIVE_DIR
-            for i, image in enumerate(images):
-                draw_label = draw_results(
-                    image=str(dataset.raw_image_dir / image.file_name),
-                    results=labels[list(metrics.fn_images_set)[i]],
-                    names=[x["name"] for x in self.categories],
-                )
-                draw_pred = draw_results(
-                    image=str(dataset.raw_image_dir / image.file_name),
-                    results=preds[list(metrics.fn_images_set)[i]],
-                    names=[x["name"] for x in self.categories],
-                )
+            if metrics.fn_images_set:
+                fn_image_ids = [set_file[idx] for idx in metrics.fn_images_set]
+                images = dataset.get_images(image_ids=fn_image_ids)
+                fn_save_path = cfg.output_path / self.FALSE_NEGATIVE_DIR
+                for i, image in enumerate(images):
+                    draw_label = draw_results(
+                        image=str(dataset.raw_image_dir / image.file_name),
+                        results=labels[list(metrics.fn_images_set)[i]],
+                        names=[x["name"] for x in self.categories],
+                    )
+                    draw_pred = draw_results(
+                        image=str(dataset.raw_image_dir / image.file_name),
+                        results=preds[list(metrics.fn_images_set)[i]],
+                        names=[x["name"] for x in self.categories],
+                    )
 
-                draw_path = fn_save_path / Path(image.file_name)
-                save_concat_images(draw_path, [draw_label, draw_pred], create_directory=True)
+                    draw_path = fn_save_path / Path(image.file_name)
+                    save_concat_images(draw_path, [draw_label, draw_pred], create_directory=True)
 
     def on_evaluate_end(self, cfg: EvaluateConfig):
         pass
@@ -1576,7 +1575,7 @@ class Hub:
             if letter_box is None:
                 letter_box = train_config.letter_box
 
-            output_path = self.evaluate_dir / dataset.root_dir / dataset.name
+            output_path = self.evaluate_dir / Path(dataset.root_dir).stem / dataset.name
             cfg = EvaluateConfig(
                 dataset_name=dataset.name,
                 dataset_root_dir=dataset.root_dir,
